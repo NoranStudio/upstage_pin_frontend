@@ -97,7 +97,8 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
           label: sector,
           type: "sector",
           data: {
-            description: chain.impact_description || "No description available",
+            sector: sector,
+            impact_description: chain.impact_description || "No description available",
           },
         })
       }
@@ -489,10 +490,20 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
         </div>
       )}
 
-      {node.type === "sector" && node.data?.description && (
-        <div className="pt-2 border-t border-border">
-          <div className="text-xs font-medium text-muted-foreground mb-1">영향 분석</div>
-          <p className="text-sm leading-relaxed whitespace-pre-line">{safeRender(node.data.description)}</p>
+      {node.type === "sector" && (
+        <div className="pt-2 border-t border-border space-y-2">
+          {node.data?.sector && (
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1">산업 분야</div>
+              <p className="text-sm font-medium">{safeRender(node.data.sector)}</p>
+            </div>
+          )}
+          {node.data?.impact_description && (
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1">영향 분석</div>
+              <p className="text-sm leading-relaxed whitespace-pre-line">{safeRender(node.data.impact_description)}</p>
+            </div>
+          )}
         </div>
       )}
 
