@@ -507,25 +507,31 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
         <div className="pt-2 border-t border-border">
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm font-medium">현재가</span>
-            <span className="text-base font-bold">{node.data.stockData.price.toLocaleString()}원</span>
+            <span className="text-base font-bold">
+              {typeof node.data.stockData.price === "number" ? node.data.stockData.price.toLocaleString() : "0"}원
+            </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">{node.data.stockData.symbol}</span>
+            <span className="text-xs text-muted-foreground">{String(node.data.stockData.symbol || "N/A")}</span>
             <div
               className={cn(
                 "flex items-center gap-1 text-sm font-medium",
-                node.data.stockData.change > 0 ? "text-stock-up" : "text-stock-down",
+                (node.data.stockData.change || 0) > 0 ? "text-stock-up" : "text-stock-down",
               )}
             >
-              {node.data.stockData.change > 0 ? (
+              {(node.data.stockData.change || 0) > 0 ? (
                 <TrendingUp className="w-4 h-4" />
               ) : (
                 <TrendingDown className="w-4 h-4" />
               )}
               <span>
-                {node.data.stockData.change > 0 ? "+" : ""}
-                {node.data.stockData.change.toLocaleString()}({node.data.stockData.changePercent > 0 ? "+" : ""}
-                {node.data.stockData.changePercent.toFixed(2)}%)
+                {(node.data.stockData.change || 0) > 0 ? "+" : ""}
+                {typeof node.data.stockData.change === "number" ? node.data.stockData.change.toLocaleString() : "0"}(
+                {(node.data.stockData.changePercent || 0) > 0 ? "+" : ""}
+                {typeof node.data.stockData.changePercent === "number"
+                  ? node.data.stockData.changePercent.toFixed(2)
+                  : "0.00"}
+                %)
               </span>
             </div>
           </div>
@@ -535,7 +541,7 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
       {node.type === "sector" && node.data?.description && (
         <div className="pt-2 border-t border-border">
           <div className="text-xs font-medium text-muted-foreground mb-1">영향 분석</div>
-          <p className="text-sm leading-relaxed whitespace-pre-line">{node.data.description}</p>
+          <p className="text-sm leading-relaxed whitespace-pre-line">{String(node.data.description)}</p>
         </div>
       )}
 
@@ -545,22 +551,31 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
         node.data.evidence.length > 0 && (
           <div className="pt-2 border-t border-border space-y-2">
             <div className="text-xs font-medium text-muted-foreground">관련 근거</div>
-            {node.data.evidence.map((evidence: any, idx: number) => (
-              <div key={idx} className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-foreground">{evidence.source_title || "제목 없음"}</span>
-                {evidence.url && (
-                  <a
-                    href={evidence.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-primary hover:underline flex items-center gap-1"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                    {evidence.url}
-                  </a>
-                )}
-              </div>
-            ))}
+            {node.data.evidence.map((evidence: any, idx: number) => {
+              // Ensure evidence is an object and has required properties
+              if (!evidence || typeof evidence !== "object") {
+                return null
+              }
+
+              return (
+                <div key={idx} className="flex flex-col gap-1">
+                  <span className="text-sm font-medium text-foreground">
+                    {String(evidence.source_title || evidence.title || "제목 없음")}
+                  </span>
+                  {evidence.url && typeof evidence.url === "string" && (
+                    <a
+                      href={evidence.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary hover:underline flex items-center gap-1"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      <span className="break-all">{evidence.url}</span>
+                    </a>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
     </div>
