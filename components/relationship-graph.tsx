@@ -2,8 +2,6 @@
 
 import { useState, useEffect, useRef, useMemo } from "react"
 import type { AnalysisReport } from "@/lib/types"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { ExternalLink } from "lucide-react"
 import { cn, safeRender } from "@/lib/utils"
 
 interface RelationshipGraphProps {
@@ -44,6 +42,11 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
   const [nodePositions, setNodePositions] = useState<Map<string, NodePosition>>(new Map())
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState(false)
+  const [hoveredNode, setHoveredNode] = useState<ProcessedNode | null>(null)
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 })
+  const [stockPrices, setStockPrices] = useState<Record<string, StockPriceData>>({})
+  const [isLoadingStocks, setIsLoadingStocks] = useState(true)
+  const stockFetchedRef = useRef(false)
 
   const { nodes, edges } = useMemo(() => {
     const nodes: ProcessedNode[] = []
@@ -224,6 +227,68 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
     return () => window.removeEventListener("resize", updateDimensions)
   }, [dimensions.height])
 
+  useEffect(() => {
+    if (stockFetchedRef.current) return
+    stockFetchedRef.current = true
+
+    const fetchAllStockPrices = async () => {
+      console.log("[v0] Starting to fetch all stock prices...")
+      const allCompanies = new Set<string>()
+
+      // Collect all unique company names
+      nodes.forEach((node) => {
+        if (node.type === "enterprise" && node.label) {
+          const companies = node.label.includes(",") ? node.label.split(",").map((c) => c.trim()) : [node.label]
+          companies.forEach((c) => allCompanies.add(c))
+        }
+      })
+
+      console.log(`[v0] Found ${allCompanies.size} unique companies:`, Array.from(allCompanies))
+
+      const companyArray = Array.from(allCompanies)
+      const results: Record<string, StockPriceData> = {}
+
+      for (let i = 0; i < companyArray.length; i++) {
+        const company = companyArray[i]
+        console.log(`[v0] Fetching stock price for: ${company} (${i + 1}/${companyArray.length})`)
+
+        try {
+          const response = await fetch("http://localhost:8001/api/stock-price", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ company }),
+          })
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`)
+          }
+
+          const data = await response.json()
+          console.log(`[v0] Received stock data for ${company}:`, data)
+          results[company] = data
+        } catch (error) {
+          console.error(`[v0] Failed to fetch stock price for ${company}:`, error)
+          results[company] = { error: "검색도중 에러가 났습니다." }
+        }
+
+        // Wait 1 second between requests to avoid rate limiting
+        if (i < companyArray.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1000))
+        }
+      }
+
+      console.log("[v0] Finished fetching all stock prices:", results)
+      setStockPrices(results)
+      setIsLoadingStocks(false)
+    }
+
+    if (nodes.some((node) => node.type === "enterprise")) {
+      fetchAllStockPrices()
+    } else {
+      setIsLoadingStocks(false)
+    }
+  }, [nodes])
+
   const getNodeColor = (type: ProcessedNode["type"]) => {
     switch (type) {
       case "input":
@@ -267,98 +332,34 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
   }
 
   return (
-    <div className="w-full overflow-x-auto overflow-y-auto">
-      <TooltipProvider>
-        <svg
-          ref={svgRef}
-          width={dimensions.width}
-          height={dimensions.height}
-          className="min-w-full"
-          style={{ minWidth: isMobile ? "100%" : "800px" }}
-        >
-          <g className="edges">
-            {nodes
-              .filter((n) => n.type === "input")
-              .map((inputNode) => {
-                const inputPos = nodePositions.get(inputNode.id)
-                if (!inputPos) return null
+    <div className="relative w-full" style={{ height: dimensions.height }}>
+      <svg
+        ref={svgRef}
+        width={dimensions.width}
+        height={dimensions.height}
+        className="min-w-full"
+        style={{ minWidth: isMobile ? "100%" : "800px" }}
+      >
+        <g className="edges">
+          {nodes
+            .filter((n) => n.type === "input")
+            .map((inputNode) => {
+              const inputPos = nodePositions.get(inputNode.id)
+              if (!inputPos) return null
 
-                return nodes
-                  .filter((n) => n.type === "policy")
-                  .map((policyNode) => {
-                    const policyPos = nodePositions.get(policyNode.id)
-                    if (!policyPos) return null
-
-                    return (
-                      <line
-                        key={`edge-${inputNode.id}-${policyNode.id}`}
-                        x1={inputPos.x}
-                        y1={inputPos.y}
-                        x2={policyPos.x}
-                        y2={policyPos.y}
-                        stroke="rgb(107, 114, 128)"
-                        strokeWidth="2"
-                        strokeDasharray="5,5"
-                        opacity="0.7"
-                      />
-                    )
-                  })
-              })}
-
-            {nodes
-              .filter((n) => n.type === "policy")
-              .map((policyNode) => {
-                const policyPos = nodePositions.get(policyNode.id)
-                if (!policyPos) return null
-
-                // Extract index from policy-{idx}
-                const policyIdx = policyNode.id.split("-")[1]
-                const sectorNode = nodes.find((n) => n.id === `sector-${policyIdx}`)
-                if (!sectorNode) return null
-
-                const sectorPos = nodePositions.get(sectorNode.id)
-                if (!sectorPos) return null
-
-                return (
-                  <line
-                    key={`edge-${policyNode.id}-${sectorNode.id}`}
-                    x1={policyPos.x}
-                    y1={policyPos.y}
-                    x2={sectorPos.x}
-                    y2={sectorPos.y}
-                    stroke="rgb(107, 114, 128)"
-                    strokeWidth="2"
-                    strokeDasharray="5,5"
-                    opacity="0.7"
-                  />
-                )
-              })}
-
-            {nodes
-              .filter((n) => n.type === "sector")
-              .map((sectorNode) => {
-                const sectorPos = nodePositions.get(sectorNode.id)
-                if (!sectorPos) return null
-
-                // Extract index from sector-{idx}
-                const sectorIdx = sectorNode.id.split("-")[1]
-
-                // Find all companies that belong to this sector (enterprise-{idx}-{companyIdx})
-                const companyNodes = nodes.filter(
-                  (n) => n.type === "enterprise" && n.id.startsWith(`enterprise-${sectorIdx}-`),
-                )
-
-                return companyNodes.map((companyNode) => {
-                  const companyPos = nodePositions.get(companyNode.id)
-                  if (!companyPos) return null
+              return nodes
+                .filter((n) => n.type === "policy")
+                .map((policyNode) => {
+                  const policyPos = nodePositions.get(policyNode.id)
+                  if (!policyPos) return null
 
                   return (
                     <line
-                      key={`edge-${sectorNode.id}-${companyNode.id}`}
-                      x1={sectorPos.x}
-                      y1={sectorPos.y}
-                      x2={companyPos.x}
-                      y2={companyPos.y}
+                      key={`edge-${inputNode.id}-${policyNode.id}`}
+                      x1={inputPos.x}
+                      y1={inputPos.y}
+                      x2={policyPos.x}
+                      y2={policyPos.y}
                       stroke="rgb(107, 114, 128)"
                       strokeWidth="2"
                       strokeDasharray="5,5"
@@ -366,167 +367,149 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
                     />
                   )
                 })
-              })}
-          </g>
+            })}
 
-          {/* Draw nodes */}
-          <g className="nodes">
-            {nodes.map((node) => {
-              const pos = nodePositions.get(node.id)
-              if (!pos) return null
+          {nodes
+            .filter((n) => n.type === "policy")
+            .map((policyNode) => {
+              const policyPos = nodePositions.get(policyNode.id)
+              if (!policyPos) return null
+
+              // Extract index from policy-{idx}
+              const policyIdx = policyNode.id.split("-")[1]
+              const sectorNode = nodes.find((n) => n.id === `sector-${policyIdx}`)
+              if (!sectorNode) return null
+
+              const sectorPos = nodePositions.get(sectorNode.id)
+              if (!sectorPos) return null
 
               return (
-                <g key={node.id}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <g
-                        className="cursor-pointer transition-transform duration-200 ease-out hover:-translate-y-2"
-                        onClick={() => setSelectedNode(node.id === selectedNode ? null : node.id)}
-                      >
-                        <NodeShape
-                          type={node.type}
-                          x={pos.x}
-                          y={pos.y}
-                          color={getNodeColor(node.type)}
-                          isSelected={selectedNode === node.id}
-                          isMobile={isMobile}
-                        />
-                        <text
-                          x={pos.x}
-                          y={pos.y}
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                          className="text-sm md:text-base font-medium pointer-events-none drop-shadow-md"
-                          style={{ userSelect: "none", fill: getTextColor(node.type) }}
-                        >
-                          {truncateText(node.label, isMobile ? 15 : 20)}
-                        </text>
-                      </g>
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-sm md:max-w-md bg-background/95 backdrop-blur-md border-border shadow-xl text-foreground">
-                      <NodeTooltipContent node={node} />
-                    </TooltipContent>
-                  </Tooltip>
-                </g>
+                <line
+                  key={`edge-${policyNode.id}-${sectorNode.id}`}
+                  x1={policyPos.x}
+                  y1={policyPos.y}
+                  x2={sectorPos.x}
+                  y2={sectorPos.y}
+                  stroke="rgb(107, 114, 128)"
+                  strokeWidth="2"
+                  strokeDasharray="5,5"
+                  opacity="0.7"
+                />
               )
             })}
-          </g>
-        </svg>
-      </TooltipProvider>
+
+          {nodes
+            .filter((n) => n.type === "sector")
+            .map((sectorNode) => {
+              const sectorPos = nodePositions.get(sectorNode.id)
+              if (!sectorPos) return null
+
+              // Extract index from sector-{idx}
+              const sectorIdx = sectorNode.id.split("-")[1]
+
+              // Find all companies that belong to this sector (enterprise-{idx}-{companyIdx})
+              const companyNodes = nodes.filter(
+                (n) => n.type === "enterprise" && n.id.startsWith(`enterprise-${sectorIdx}-`),
+              )
+
+              return companyNodes.map((companyNode) => {
+                const companyPos = nodePositions.get(companyNode.id)
+                if (!companyPos) return null
+
+                return (
+                  <line
+                    key={`edge-${sectorNode.id}-${companyNode.id}`}
+                    x1={sectorPos.x}
+                    y1={sectorPos.y}
+                    x2={companyPos.x}
+                    y2={companyPos.y}
+                    stroke="rgb(107, 114, 128)"
+                    strokeWidth="2"
+                    strokeDasharray="5,5"
+                    opacity="0.7"
+                  />
+                )
+              })
+            })}
+        </g>
+
+        {/* Draw nodes */}
+        <g className="nodes">
+          {nodes.map((node) => {
+            const pos = nodePositions.get(node.id)
+            if (!pos) return null
+
+            return (
+              <g key={node.id} onMouseEnter={() => setHoveredNode(node)} onMouseLeave={() => setHoveredNode(null)}>
+                <rect
+                  x={pos.x - 117}
+                  y={pos.y - 58.5}
+                  width={234}
+                  height={117}
+                  rx={12}
+                  ry={12}
+                  fill={getNodeColor(node.type)}
+                  stroke={getBorderColor(node.type)}
+                  strokeWidth={1.5}
+                  className="transition-all duration-300 ease-in-out"
+                  style={{ filter: "drop-shadow(0 4px 6px rgb(0 0 0 / 0.1))" }}
+                />
+                <text
+                  x={pos.x}
+                  y={pos.y}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  className="text-sm md:text-base font-medium pointer-events-none drop-shadow-md"
+                  style={{ userSelect: "none", fill: getTextColor(node.type) }}
+                >
+                  {truncateText(node.label, isMobile ? 15 : 20)}
+                </text>
+              </g>
+            )
+          })}
+        </g>
+      </svg>
+
+      {hoveredNode && (
+        <NodeTooltipContent
+          node={hoveredNode}
+          x={tooltipPos.x}
+          y={tooltipPos.y}
+          stockPrices={stockPrices}
+          isLoadingStocks={isLoadingStocks}
+        />
+      )}
     </div>
   )
 }
 
-interface NodeShapeProps {
-  type: ProcessedNode["type"]
+function NodeTooltipContent({
+  node,
+  x,
+  y,
+  stockPrices,
+  isLoadingStocks,
+}: {
+  node: ProcessedNode
   x: number
   y: number
-  color: string
-  isSelected: boolean
-  isMobile?: boolean
-}
-
-function NodeShape({ type, x, y, color, isSelected, isMobile }: NodeShapeProps) {
-  const strokeWidth = isSelected ? 3 : 1.5
-  const stroke = isSelected ? "hsl(var(--primary))" : getBorderColor(type)
-  const scale = isMobile ? 0.8 : 1
-
-  let width = 234 * scale // 180 * 1.3
-  let height = 117 * scale // 90 * 1.3
-
-  if (type === "input") {
-    width = 260 * scale // 200 * 1.3
-    height = 130 * scale // 100 * 1.3
-  } else if (type === "enterprise") {
-    width = 221 * scale // 170 * 1.3
-    height = 110 * scale // 85 * 1.3
-  }
-
-  return (
-    <rect
-      x={x - width / 2}
-      y={y - height / 2}
-      width={width}
-      height={height}
-      rx={12 * scale}
-      ry={12 * scale}
-      fill={color}
-      stroke={stroke}
-      strokeWidth={strokeWidth}
-      className="transition-all duration-300 ease-in-out"
-      style={{ filter: "drop-shadow(0 4px 6px rgb(0 0 0 / 0.1))" }}
-    />
-  )
-}
-
-function getBorderColor(type: ProcessedNode["type"]) {
-  switch (type) {
-    case "input":
-      return "rgb(75, 85, 99)" // gray-600 for black nodes
-    case "policy":
-      return "rgb(107, 114, 128)" // gray-500 for dark gray nodes
-    case "sector":
-      return "rgb(209, 213, 219)" // gray-300 for light gray nodes
-    case "enterprise":
-      return "rgb(229, 231, 235)" // gray-200 for white nodes
-    default:
-      return "rgb(156, 163, 175)" // gray-400 default
-  }
-}
-
-function NodeTooltipContent({ node }: { node: ProcessedNode }) {
-  const [stockPrices, setStockPrices] = useState<Record<string, StockPriceData>>({})
-  const [loadingStocks, setLoadingStocks] = useState<Record<string, boolean>>({})
-
-  useEffect(() => {
-    if (node.type === "enterprise" && node.label) {
-      const companies = node.label.includes(",") ? node.label.split(",").map((c) => c.trim()) : [node.label]
-
-      const fetchStockPricesSequentially = async () => {
-        for (const company of companies) {
-          if (!stockPrices[company] && !loadingStocks[company]) {
-            setLoadingStocks((prev) => ({ ...prev, [company]: true }))
-
-            console.log(`[v0] Fetching stock price for: ${company}`)
-
-            try {
-              const response = await fetch("http://localhost:8001/api/stock-price", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ company }),
-              })
-
-              if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`)
-              }
-
-              const data = await response.json()
-              console.log(`[v0] Received stock data for ${company}:`, data)
-              setStockPrices((prev) => ({ ...prev, [company]: data }))
-            } catch (error) {
-              console.error(`[v0] Failed to fetch stock price for ${company}:`, error)
-              setStockPrices((prev) => ({ ...prev, [company]: { error: "검색도중 에러가 났습니다." } }))
-            } finally {
-              setLoadingStocks((prev) => ({ ...prev, [company]: false }))
-            }
-
-            if (companies.indexOf(company) < companies.length - 1) {
-              await new Promise((resolve) => setTimeout(resolve, 100))
-            }
-          }
-        }
-      }
-
-      fetchStockPricesSequentially()
-    }
-  }, [node.type, node.label])
-
+  stockPrices: Record<string, StockPriceData>
+  isLoadingStocks: boolean
+}) {
   console.log("[v0] Rendering tooltip for node:", node.id, "data:", node.data)
 
   return (
-    <div className="space-y-3 text-foreground">
+    <div
+      className="absolute z-50 max-w-md bg-background/95 backdrop-blur-sm text-foreground rounded-lg shadow-xl border p-4"
+      style={{
+        left: `${x}px`,
+        top: `${y}px`,
+        transform: "translate(-50%, -100%)",
+        marginTop: "-12px",
+      }}
+    >
       <div>
-        <div className="font-bold text-lg mb-1 text-foreground">{safeRender(node.fullText || node.label || "N/A")}</div>
+        <div className="font-bold text-lg mb-1">{safeRender(node.fullText || node.label || "N/A")}</div>
       </div>
 
       {node.type === "policy" && (
@@ -574,7 +557,7 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
                         rel="noopener noreferrer"
                         className="text-xs text-primary hover:underline flex items-center gap-1"
                       >
-                        <ExternalLink className="w-3 h-3" />
+                        {/* <ExternalLink className="w-3 h-3" /> */}
                         <span className="break-all">{urlString}</span>
                       </a>
                     )}
@@ -618,15 +601,18 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
 
             return companies.map((company, idx) => {
               const stockData = stockPrices[company]
-              const isLoading = loadingStocks[company]
 
               return (
                 <div key={idx} className={cn("space-y-2", idx > 0 && "pt-4 border-t border-border/50")}>
                   <div className="font-semibold text-base text-foreground">{company}</div>
 
-                  {isLoading && <div className="text-sm text-muted-foreground">주가 정보 로딩 중...</div>}
+                  {isLoadingStocks && <div className="text-sm text-muted-foreground">주가 정보 로딩 중...</div>}
 
-                  {!isLoading && stockData?.error && (
+                  {!isLoadingStocks && !stockData && (
+                    <div className="text-sm font-medium text-gray-600">주가 정보를 불러 올 수 없습니다</div>
+                  )}
+
+                  {!isLoadingStocks && stockData?.error && (
                     <div className="text-sm font-medium text-gray-600">
                       {stockData.error === "데이터를 찾지 못했습니다."
                         ? "주가 정보를 불러 올 수 없습니다"
@@ -634,7 +620,7 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
                     </div>
                   )}
 
-                  {!isLoading && stockData && !stockData.error && (
+                  {!isLoadingStocks && stockData && !stockData.error && (
                     <div className="space-y-1">
                       <div className="flex items-baseline gap-2">
                         <span className="text-sm text-muted-foreground">현재가:</span>
@@ -685,6 +671,21 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
       )}
     </div>
   )
+}
+
+function getBorderColor(type: ProcessedNode["type"]) {
+  switch (type) {
+    case "input":
+      return "rgb(75, 85, 99)" // gray-600 for black nodes
+    case "policy":
+      return "rgb(107, 114, 128)" // gray-500 for dark gray nodes
+    case "sector":
+      return "rgb(209, 213, 219)" // gray-300 for light gray nodes
+    case "enterprise":
+      return "rgb(229, 231, 235)" // gray-200 for white nodes
+    default:
+      return "rgb(156, 163, 175)" // gray-400 default
+  }
 }
 
 function truncateText(text: string, maxLength: number): string {
