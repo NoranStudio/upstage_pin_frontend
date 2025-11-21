@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import type { AnalysisReport } from "@/lib/types"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { ExternalLink, TrendingUp, TrendingDown } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, safeRender } from "@/lib/utils"
 
 interface RelationshipGraphProps {
   data: AnalysisReport
@@ -494,7 +494,7 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
   return (
     <div className="space-y-3">
       <div>
-        <div className="font-semibold text-base mb-1">{String(node.fullText || node.label || "N/A")}</div>
+        <div className="font-semibold text-base mb-1">{safeRender(node.fullText || node.label || "N/A")}</div>
         <div className="text-xs text-muted-foreground">
           {node.type === "input" && "검색 입력"}
           {node.type === "policy" && "관련 정책"}
@@ -508,12 +508,15 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm font-medium">현재가</span>
             <span className="text-base font-bold">
-              {typeof node.data.stockData.price === "number" ? node.data.stockData.price.toLocaleString() : "0"}원
+              {typeof node.data.stockData.price === "number"
+                ? node.data.stockData.price.toLocaleString()
+                : safeRender(node.data.stockData.price || "0")}
+              원
             </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">
-              {node.data.stockData.symbol ? String(node.data.stockData.symbol) : "N/A"}
+              {node.data.stockData.symbol ? safeRender(node.data.stockData.symbol) : "N/A"}
             </span>
             <div
               className={cn(
@@ -528,11 +531,13 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
               )}
               <span>
                 {(node.data.stockData.change || 0) > 0 ? "+" : ""}
-                {typeof node.data.stockData.change === "number" ? node.data.stockData.change.toLocaleString() : "0"}(
-                {(node.data.stockData.changePercent || 0) > 0 ? "+" : ""}
+                {typeof node.data.stockData.change === "number"
+                  ? node.data.stockData.change.toLocaleString()
+                  : safeRender(node.data.stockData.change || "0")}
+                ({(node.data.stockData.changePercent || 0) > 0 ? "+" : ""}
                 {typeof node.data.stockData.changePercent === "number"
                   ? node.data.stockData.changePercent.toFixed(2)
-                  : "0.00"}
+                  : safeRender(node.data.stockData.changePercent || "0.00")}
                 %)
               </span>
             </div>
@@ -543,13 +548,7 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
       {node.type === "sector" && node.data?.description && (
         <div className="pt-2 border-t border-border">
           <div className="text-xs font-medium text-muted-foreground mb-1">영향 분석</div>
-          <p className="text-sm leading-relaxed whitespace-pre-line">
-            {typeof node.data.description === "string"
-              ? node.data.description
-              : typeof node.data.description === "object"
-                ? JSON.stringify(node.data.description)
-                : String(node.data.description || "")}
-          </p>
+          <p className="text-sm leading-relaxed whitespace-pre-line">{safeRender(node.data.description)}</p>
         </div>
       )}
 
@@ -565,12 +564,10 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
               }
 
               const title = evidence.source_title || evidence.title || "제목 없음"
-              const titleString =
-                typeof title === "string" ? title : typeof title === "object" ? JSON.stringify(title) : String(title)
+              const titleString = safeRender(title)
 
               const url = evidence.url || evidence.source_url || ""
-              const urlString =
-                typeof url === "string" ? url : typeof url === "object" ? JSON.stringify(url) : String(url)
+              const urlString = safeRender(url)
 
               return (
                 <div key={idx} className="flex flex-col gap-1">

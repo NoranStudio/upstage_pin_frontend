@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { RelationshipGraph } from "@/components/relationship-graph"
 import type { AnalysisReport } from "@/lib/types"
 import { AlertCircle } from "lucide-react"
+import { safeRender } from "@/lib/utils"
 
 export function AnalysisContent() {
   const searchParams = useSearchParams()
@@ -103,9 +104,9 @@ export function AnalysisContent() {
       {/* Header Info */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-2xl md:text-3xl font-bold">{apiResponse.report_title}</h2>
+          <h2 className="text-2xl md:text-3xl font-bold">{safeRender(apiResponse.report_title)}</h2>
           <Badge variant="secondary" className="text-xs">
-            {apiResponse.time_range}
+            {safeRender(apiResponse.time_range)}
           </Badge>
         </div>
         <p className="text-muted-foreground leading-relaxed">
@@ -123,7 +124,7 @@ export function AnalysisContent() {
       {apiResponse.notes && (
         <Card className="p-4 bg-muted/50 border-muted">
           <p className="text-sm text-muted-foreground leading-relaxed">
-            <span className="font-medium text-foreground">참고사항:</span> {apiResponse.notes}
+            <span className="font-medium text-foreground">참고사항:</span> {safeRender(apiResponse.notes)}
           </p>
         </Card>
       )}
