@@ -213,27 +213,30 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
         })
       })
 
-      const policySpacing = height / (policyNodes.length + 1)
+      const policyTotalHeight = height - padding * 2 - 100 // Reduced spacing
+      const policySpacing = policyTotalHeight / (policyNodes.length + 1)
       policyNodes.forEach((node, i) => {
         positions.set(node.id, {
           x: padding + colWidth * 1.5,
-          y: policySpacing * (i + 1),
+          y: padding + 50 + policySpacing * (i + 1),
         })
       })
 
-      const sectorSpacing = height / (sectorNodes.length + 1)
+      const sectorTotalHeight = height - padding * 2 - 100
+      const sectorSpacing = sectorTotalHeight / (sectorNodes.length + 1)
       sectorNodes.forEach((node, i) => {
         positions.set(node.id, {
           x: padding + colWidth * 2.5,
-          y: sectorSpacing * (i + 1),
+          y: padding + 50 + sectorSpacing * (i + 1),
         })
       })
 
-      const enterpriseSpacing = height / (enterpriseNodes.length + 1)
+      const enterpriseTotalHeight = height - padding * 2 - 100
+      const enterpriseSpacing = enterpriseTotalHeight / (enterpriseNodes.length + 1)
       enterpriseNodes.forEach((node, i) => {
         positions.set(node.id, {
           x: padding + colWidth * 3.5,
-          y: enterpriseSpacing * (i + 1),
+          y: padding + 50 + enterpriseSpacing * (i + 1),
         })
       })
     }
@@ -261,15 +264,30 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
   const getNodeColor = (type: ProcessedNode["type"]) => {
     switch (type) {
       case "input":
-        return "var(--color-node-input)"
+        return "rgb(17, 24, 39)" // Black (gray-900)
       case "policy":
-        return "var(--color-node-policy)"
+        return "rgb(55, 65, 81)" // Dark gray (gray-700)
       case "sector":
-        return "var(--color-node-sector)"
+        return "rgb(156, 163, 175)" // Light gray (gray-400)
       case "enterprise":
-        return "var(--color-node-enterprise)"
+        return "rgb(243, 244, 246)" // White (gray-100)
       default:
-        return "var(--primary)"
+        return "rgb(55, 65, 81)"
+    }
+  }
+
+  const getTextColor = (type: ProcessedNode["type"]) => {
+    switch (type) {
+      case "input":
+        return "rgb(255, 255, 255)" // White text on black
+      case "policy":
+        return "rgb(255, 255, 255)" // White text on dark gray
+      case "sector":
+        return "rgb(17, 24, 39)" // Dark text on light gray
+      case "enterprise":
+        return "rgb(17, 24, 39)" // Dark text on white
+      default:
+        return "rgb(255, 255, 255)"
     }
   }
 
@@ -415,8 +433,8 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
                           y={pos.y}
                           textAnchor="middle"
                           dominantBaseline="middle"
-                          className="fill-white text-xs md:text-sm font-medium pointer-events-none drop-shadow-md"
-                          style={{ userSelect: "none" }}
+                          className="text-sm md:text-base font-medium pointer-events-none drop-shadow-md"
+                          style={{ userSelect: "none", fill: getTextColor(node.type) }}
                         >
                           {truncateText(node.label, isMobile ? 15 : 20)}
                         </text>
