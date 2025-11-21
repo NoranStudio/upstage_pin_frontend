@@ -181,7 +181,7 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
       const calculatedHeight = Math.max(600, maxNodesInColumn * (nodeHeight + verticalGap) + 200)
 
       const columnWidth = isMobile ? 200 : 300
-      const totalWidth = columns.length * columnWidth + 100
+      const totalWidth = columns.length * columnWidth + 400
 
       columns.forEach((columnNodes, colIndex) => {
         const x = (colIndex + 1) * (totalWidth / (columns.length + 1))
@@ -288,10 +288,10 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
                         y1={inputPos.y}
                         x2={policyPos.x}
                         y2={policyPos.y}
-                        stroke="rgb(156, 163, 175)"
+                        stroke="rgb(107, 114, 128)"
                         strokeWidth="2"
                         strokeDasharray="5,5"
-                        opacity="0.6"
+                        opacity="0.7"
                       />
                     )
                   })
@@ -318,10 +318,10 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
                     y1={policyPos.y}
                     x2={sectorPos.x}
                     y2={sectorPos.y}
-                    stroke="rgb(156, 163, 175)"
+                    stroke="rgb(107, 114, 128)"
                     strokeWidth="2"
                     strokeDasharray="5,5"
-                    opacity="0.6"
+                    opacity="0.7"
                   />
                 )
               })}
@@ -351,10 +351,10 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
                       y1={sectorPos.y}
                       x2={companyPos.x}
                       y2={companyPos.y}
-                      stroke="rgb(156, 163, 175)"
+                      stroke="rgb(107, 114, 128)"
                       strokeWidth="2"
                       strokeDasharray="5,5"
-                      opacity="0.6"
+                      opacity="0.7"
                     />
                   )
                 })
