@@ -62,8 +62,8 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
     })
 
     const policyNodes: ProcessedNode[] = []
-    const sectorMap = new Map<string, ProcessedNode>()
-    const companyMap = new Map<string, ProcessedNode>()
+    const sectorNodes: ProcessedNode[] = []
+    const companyNodes: ProcessedNode[] = []
 
     data.influence_chains.forEach((chain, idx) => {
       // Safety checks for each chain
@@ -73,123 +73,56 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
       }
 
       // Add policy node - allow "None directly linked"
-      if (chain.policy && chain.policy.trim() !== "") {
-        policyNodes.push({
-          id: `policy-${idx}`,
-          label: chain.policy,
-          fullText: chain.policy,
-          type: "policy",
-          data: {
-            description: chain.policy,
-            evidence: Array.isArray(chain.evidence) ? chain.evidence : [],
-          },
-        })
-      }
+      const policyLabel = chain.policy && chain.policy.trim() !== "" ? chain.policy : "None directly linked"
+      policyNodes.push({
+        id: `policy-${idx}`,
+        label: policyLabel,
+        fullText: policyLabel,
+        type: "policy",
+        data: {
+          description: policyLabel,
+          evidence: Array.isArray(chain.evidence) ? chain.evidence : [],
+        },
+      })
 
       // Add sector node - with fallback
       const sector = chain.industry_or_sector || "Unknown Sector"
-      if (!sectorMap.has(sector)) {
-        sectorMap.set(sector, {
-          id: `sector-${sectorMap.size + 1}`,
-          label: sector,
-          type: "sector",
-          data: {
-            sector: sector,
-            impact_description: chain.impact_description || "No description available",
-          },
-        })
-      }
+      sectorNodes.push({
+        id: `sector-${idx}`,
+        label: sector,
+        type: "sector",
+        data: {
+          sector: sector,
+          impact_description: chain.impact_description || "No description available",
+        },
+      })
 
       // Add company nodes - with array safety check
       if (Array.isArray(chain.companies)) {
-        chain.companies.forEach((company) => {
+        chain.companies.forEach((company, companyIdx) => {
           if (company && company.trim() !== "") {
-            if (!companyMap.has(company)) {
-              // Extract stock symbol if present (format: "회사명 (025950)")
-              const symbolMatch = company.match(/$$(\d+)$$/)
-              companyMap.set(company, {
-                id: `enterprise-${companyMap.size + 1}`,
-                label: company,
-                type: "enterprise",
-                data: {
-                  stockData: {
-                    symbol: symbolMatch ? symbolMatch[1] : "N/A",
-                    price: 0,
-                    change: 0,
-                    changePercent: 0,
-                  },
+            const symbolMatch = company.match(/$$(\d+)$$/)
+            companyNodes.push({
+              id: `enterprise-${idx}-${companyIdx}`,
+              label: company,
+              type: "enterprise",
+              data: {
+                stockData: {
+                  symbol: symbolMatch ? symbolMatch[1] : "N/A",
+                  price: 0,
+                  change: 0,
+                  changePercent: 0,
                 },
-              })
-            }
+              },
+            })
           }
         })
       }
     })
 
     nodes.push(...policyNodes)
-    nodes.push(...Array.from(sectorMap.values()))
-    nodes.push(...Array.from(companyMap.values()))
-
-    data.influence_chains.forEach((chain, idx) => {
-      if (!chain) return
-
-      const policyNode = policyNodes.find((p) => p.id === `policy-${idx}`)
-      const sector = chain.industry_or_sector || "Unknown Sector"
-      const sectorNode = Array.from(sectorMap.values()).find((s) => s.label === sector)
-
-      // Input -> Policy or Input -> Sector (if no policy)
-      if (policyNode) {
-        edges.push({
-          id: `edge-input-policy-${idx}`,
-          source: "input-1",
-          target: policyNode.id,
-          data: { evidence: Array.isArray(chain.evidence) ? chain.evidence : [] },
-        })
-      } else if (sectorNode) {
-        // If no policy, connect directly to sector
-        edges.push({
-          id: `edge-input-sector-${idx}`,
-          source: "input-1",
-          target: sectorNode.id,
-          data: {},
-        })
-      }
-
-      // Policy -> Sector
-      if (policyNode && sectorNode) {
-        const edgeId = `edge-policy-sector-${policyNode.id}-${sectorNode.id}`
-        // Avoid duplicate edges
-        if (!edges.find((e) => e.id === edgeId)) {
-          edges.push({
-            id: edgeId,
-            source: policyNode.id,
-            target: sectorNode.id,
-            data: {},
-          })
-        }
-      }
-
-      // Sector -> Company
-      if (Array.isArray(chain.companies) && sectorNode) {
-        chain.companies.forEach((company) => {
-          if (company && company.trim() !== "") {
-            const companyNode = Array.from(companyMap.values()).find((c) => c.label === company)
-            if (companyNode) {
-              const edgeId = `edge-sector-company-${sectorNode.id}-${companyNode.id}`
-              // Avoid duplicate edges
-              if (!edges.find((e) => e.id === edgeId)) {
-                edges.push({
-                  id: edgeId,
-                  source: sectorNode.id,
-                  target: companyNode.id,
-                  data: {},
-                })
-              }
-            }
-          }
-        })
-      }
-    })
+    nodes.push(...sectorNodes)
+    nodes.push(...companyNodes)
 
     console.log("[v0] Processed nodes:", nodes.length, "edges:", edges.length)
     return { nodes, edges }
@@ -446,10 +379,41 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
 
       {node.type === "policy" && (
         <div className="pt-2 border-t border-border space-y-2">
-          <div>
-            <div className="text-xs font-medium text-muted-foreground mb-1">관련 정책</div>
-            <p className="text-sm font-medium">{safeRender(node.data?.description || node.label)}</p>
-          </div>
+          {node.data?.evidence && Array.isArray(node.data.evidence) && node.data.evidence.length > 0 ? (
+            <>
+              <div className="text-xs font-medium text-muted-foreground">관련 근거</div>
+              {node.data.evidence.map((evidence: any, idx: number) => {
+                if (!evidence || typeof evidence !== "object") {
+                  return null
+                }
+
+                const title = evidence.source_title || evidence.title || "제목 없음"
+                const titleString = safeRender(title)
+
+                const url = evidence.url || evidence.source_url || ""
+                const urlString = safeRender(url)
+
+                return (
+                  <div key={idx} className="flex flex-col gap-1">
+                    <span className="text-sm font-medium text-foreground">{titleString}</span>
+                    {urlString && (
+                      <a
+                        href={urlString}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline flex items-center gap-1"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span className="break-all">{urlString}</span>
+                      </a>
+                    )}
+                  </div>
+                )
+              })}
+            </>
+          ) : (
+            <div className="text-xs text-muted-foreground">관련 근거 없음</div>
+          )}
         </div>
       )}
 
@@ -497,12 +461,6 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
 
       {node.type === "sector" && (
         <div className="pt-2 border-t border-border space-y-2">
-          {node.data?.sector && (
-            <div>
-              <div className="text-xs font-medium text-muted-foreground mb-1">산업 분야</div>
-              <p className="text-sm font-medium">{safeRender(node.data.sector)}</p>
-            </div>
-          )}
           {node.data?.impact_description && (
             <div>
               <div className="text-xs font-medium text-muted-foreground mb-1">영향 분석</div>
@@ -511,43 +469,6 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
           )}
         </div>
       )}
-
-      {node.type === "policy" &&
-        node.data?.evidence &&
-        Array.isArray(node.data.evidence) &&
-        node.data.evidence.length > 0 && (
-          <div className="pt-2 border-t border-border space-y-2">
-            <div className="text-xs font-medium text-muted-foreground">관련 근거</div>
-            {node.data.evidence.map((evidence: any, idx: number) => {
-              if (!evidence || typeof evidence !== "object") {
-                return null
-              }
-
-              const title = evidence.source_title || evidence.title || "제목 없음"
-              const titleString = safeRender(title)
-
-              const url = evidence.url || evidence.source_url || ""
-              const urlString = safeRender(url)
-
-              return (
-                <div key={idx} className="flex flex-col gap-1">
-                  <span className="text-sm font-medium text-foreground">{titleString}</span>
-                  {urlString && (
-                    <a
-                      href={urlString}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-primary hover:underline flex items-center gap-1"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      <span className="break-all">{urlString}</span>
-                    </a>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
     </div>
   )
 }
