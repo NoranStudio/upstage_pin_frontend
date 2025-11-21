@@ -159,90 +159,45 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
   }, [])
 
   useEffect(() => {
-    const positions = new Map<string, NodePosition>()
+    if (nodes.length > 0) {
+      const columnGroups = new Map<string, ProcessedNode[]>()
+      nodes.forEach((node) => {
+        const column = node.type
+        if (!columnGroups.has(column)) {
+          columnGroups.set(column, [])
+        }
+        columnGroups.get(column)!.push(node)
+      })
 
-    const inputNodes = nodes.filter((n) => n.type === "input")
-    const policyNodes = nodes.filter((n) => n.type === "policy")
-    const sectorNodes = nodes.filter((n) => n.type === "sector")
-    const enterpriseNodes = nodes.filter((n) => n.type === "enterprise")
+      const newPositions = new Map<string, NodePosition>()
+      const isMobile = window.innerWidth < 768
+      const verticalGap = 80
+      const nodeHeight = 100
 
-    const width = dimensions.width
-    const height = dimensions.height
-    const padding = isMobile ? 40 : 80
+      const columnOrder = ["input", "policy", "sector", "enterprise"]
+      const columns: ProcessedNode[][] = columnOrder.map((type) => columnGroups.get(type) || [])
 
-    if (isMobile) {
-      const rowHeight = (height - padding * 2) / 4
+      const maxNodesInColumn = Math.max(...columns.map((col) => col.length))
+      const calculatedHeight = Math.max(600, maxNodesInColumn * (nodeHeight + verticalGap) + 200)
 
-      inputNodes.forEach((node, i) => {
-        positions.set(node.id, {
-          x: width / 2,
-          y: padding + rowHeight * 0.5,
+      const columnWidth = isMobile ? 200 : 300
+      const totalWidth = columns.length * columnWidth + 100
+
+      columns.forEach((columnNodes, colIndex) => {
+        const x = (colIndex + 1) * (totalWidth / (columns.length + 1))
+        const totalHeight = columnNodes.length * nodeHeight + (columnNodes.length - 1) * verticalGap
+        const startY = (calculatedHeight - totalHeight) / 2
+
+        columnNodes.forEach((node, rowIndex) => {
+          const y = startY + rowIndex * (nodeHeight + verticalGap)
+          newPositions.set(node.id, { x, y })
         })
       })
 
-      const policySpacing = width / (policyNodes.length + 1)
-      policyNodes.forEach((node, i) => {
-        positions.set(node.id, {
-          x: policySpacing * (i + 1),
-          y: padding + rowHeight * 1.5,
-        })
-      })
-
-      const sectorSpacing = width / (sectorNodes.length + 1)
-      sectorNodes.forEach((node, i) => {
-        positions.set(node.id, {
-          x: sectorSpacing * (i + 1),
-          y: padding + rowHeight * 2.5,
-        })
-      })
-
-      const enterpriseSpacing = width / (enterpriseNodes.length + 1)
-      enterpriseNodes.forEach((node, i) => {
-        positions.set(node.id, {
-          x: enterpriseSpacing * (i + 1),
-          y: padding + rowHeight * 3.5,
-        })
-      })
-    } else {
-      const colWidth = (width - padding * 2) / 4
-
-      inputNodes.forEach((node, i) => {
-        positions.set(node.id, {
-          x: padding + colWidth * 0.5,
-          y: height / 2,
-        })
-      })
-
-      const policyTotalHeight = (height - padding * 2) * 1.5
-      const policySpacing = policyTotalHeight / (policyNodes.length + 1)
-      policyNodes.forEach((node, i) => {
-        positions.set(node.id, {
-          x: padding + colWidth * 1.5,
-          y: padding + policySpacing * (i + 1),
-        })
-      })
-
-      const sectorTotalHeight = (height - padding * 2) * 1.5
-      const sectorSpacing = sectorTotalHeight / (sectorNodes.length + 1)
-      sectorNodes.forEach((node, i) => {
-        positions.set(node.id, {
-          x: padding + colWidth * 2.5,
-          y: padding + sectorSpacing * (i + 1),
-        })
-      })
-
-      const enterpriseTotalHeight = (height - padding * 2) * 1.5
-      const enterpriseSpacing = enterpriseTotalHeight / (enterpriseNodes.length + 1)
-      enterpriseNodes.forEach((node, i) => {
-        positions.set(node.id, {
-          x: padding + colWidth * 3.5,
-          y: padding + enterpriseSpacing * (i + 1),
-        })
-      })
+      setNodePositions(newPositions)
+      setDimensions({ width: totalWidth, height: calculatedHeight })
     }
-
-    setNodePositions(positions)
-  }, [nodes, dimensions, isMobile])
+  }, [nodes])
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -250,8 +205,8 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
         const container = svgRef.current.parentElement
         if (container) {
           const width = container.clientWidth
-          const height = Math.max(isMobile ? 800 : 600, window.innerHeight * 0.7)
-          setDimensions({ width, height })
+          const height = dimensions.height
+          setDimensions((prev) => ({ width, height: prev.height }))
         }
       }
     }
@@ -259,7 +214,7 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
     updateDimensions()
     window.addEventListener("resize", updateDimensions)
     return () => window.removeEventListener("resize", updateDimensions)
-  }, [isMobile])
+  }, [dimensions.height])
 
   const getNodeColor = (type: ProcessedNode["type"]) => {
     switch (type) {
@@ -304,7 +259,7 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
   }
 
   return (
-    <div className="w-full overflow-x-auto">
+    <div className="w-full overflow-x-auto overflow-y-auto">
       <TooltipProvider>
         <svg
           ref={svgRef}
