@@ -49,6 +49,7 @@ python main.py
 프론트엔드 (localhost:3000)
     ↓
 Mock Server (localhost:8001)
+python ./scripts/main.py ***실행 경로에 유의할것
     ↓
 Deep Research API (localhost:8000)
 \`\`\`
