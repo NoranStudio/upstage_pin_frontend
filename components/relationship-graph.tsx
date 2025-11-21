@@ -1,344 +1,424 @@
 "use client"
 
-import type React from "react"
-
-import { useState, useMemo, useRef, useEffect } from "react"
-import { motion } from "framer-motion"
+import { useState, useEffect, useRef } from "react"
+import type { GraphData, GraphNode, GraphEdge } from "@/lib/types"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { ExternalLink, TrendingUp, TrendingDown } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { mockStockData } from "@/lib/mock-data"
-import type { AnalysisReport } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 interface RelationshipGraphProps {
-  data: AnalysisReport
+  data: GraphData
 }
 
-type NodeType = "input" | "policy" | "sector" | "company"
-
-interface GraphNode {
-  id: string
-  type: NodeType
-  label: string
+interface NodePosition {
   x: number
   y: number
-  data?: any
-  sources?: any[] // For policy evidence
-  description?: string // For sector impact
-}
-
-interface GraphLink {
-  source: string
-  target: string
 }
 
 export function RelationshipGraph({ data }: RelationshipGraphProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
-  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 })
+  const svgRef = useRef<SVGSVGElement>(null)
+  const [dimensions, setDimensions] = useState({ width: 1000, height: 600 })
+  const [nodePositions, setNodePositions] = useState<Map<string, NodePosition>>(new Map())
+  const [selectedNode, setSelectedNode] = useState<string | null>(null)
+  const [isMobile, setIsMobile] = useState(false)
 
-  // Update container size on resize
   useEffect(() => {
-    const updateSize = () => {
-      if (containerRef.current) {
-        setContainerSize({
-          width: containerRef.current.offsetWidth,
-          height: containerRef.current.offsetHeight,
-        })
-      }
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
     }
-
-    updateSize()
-    window.addEventListener("resize", updateSize)
-    return () => window.removeEventListener("resize", updateSize)
+    checkMobile()
+    window.addEventListener("resize", checkMobile)
+    return () => window.removeEventListener("resize", checkMobile)
   }, [])
 
-  // Process data into nodes and links with merging logic
-  const { nodes, links } = useMemo(() => {
-    const nodesMap = new Map<string, GraphNode>()
-    const linksSet = new Set<string>()
+  useEffect(() => {
+    const positions = new Map<string, NodePosition>()
 
-    // 1. Input Node (Root)
-    const rootId = "root"
-    nodesMap.set(rootId, {
-      id: rootId,
-      type: "input",
-      label: data.influence_chains[0]?.politician || "Input",
-      x: 0,
-      y: 0.5,
-    })
+    const inputNodes = data.nodes.filter((n) => n.type === "input")
+    const policyNodes = data.nodes.filter((n) => n.type === "policy")
+    const sectorNodes = data.nodes.filter((n) => n.type === "sector")
+    const enterpriseNodes = data.nodes.filter((n) => n.type === "enterprise")
 
-    // Helper to add link
-    const addLink = (source: string, target: string) => {
-      linksSet.add(`${source}|${target}`)
+    const width = dimensions.width
+    const height = dimensions.height
+    const padding = isMobile ? 40 : 80
+
+    if (isMobile) {
+      const rowHeight = (height - padding * 2) / 4
+
+      inputNodes.forEach((node, i) => {
+        positions.set(node.id, {
+          x: width / 2,
+          y: padding + rowHeight * 0.5,
+        })
+      })
+
+      const policySpacing = width / (policyNodes.length + 1)
+      policyNodes.forEach((node, i) => {
+        positions.set(node.id, {
+          x: policySpacing * (i + 1),
+          y: padding + rowHeight * 1.5,
+        })
+      })
+
+      const sectorSpacing = width / (sectorNodes.length + 1)
+      sectorNodes.forEach((node, i) => {
+        positions.set(node.id, {
+          x: sectorSpacing * (i + 1),
+          y: padding + rowHeight * 2.5,
+        })
+      })
+
+      const enterpriseSpacing = width / (enterpriseNodes.length + 1)
+      enterpriseNodes.forEach((node, i) => {
+        positions.set(node.id, {
+          x: enterpriseSpacing * (i + 1),
+          y: padding + rowHeight * 3.5,
+        })
+      })
+    } else {
+      const colWidth = (width - padding * 2) / 4
+
+      inputNodes.forEach((node, i) => {
+        positions.set(node.id, {
+          x: padding + colWidth * 0.5,
+          y: height / 2,
+        })
+      })
+
+      const policySpacing = height / (policyNodes.length + 1)
+      policyNodes.forEach((node, i) => {
+        positions.set(node.id, {
+          x: padding + colWidth * 1.5,
+          y: policySpacing * (i + 1),
+        })
+      })
+
+      const sectorSpacing = height / (sectorNodes.length + 1)
+      sectorNodes.forEach((node, i) => {
+        positions.set(node.id, {
+          x: padding + colWidth * 2.5,
+          y: sectorSpacing * (i + 1),
+        })
+      })
+
+      const enterpriseSpacing = height / (enterpriseNodes.length + 1)
+      enterpriseNodes.forEach((node, i) => {
+        positions.set(node.id, {
+          x: padding + colWidth * 3.5,
+          y: enterpriseSpacing * (i + 1),
+        })
+      })
     }
 
-    // Process chains
-    data.influence_chains.forEach((chain) => {
-      // 2. Policy Node
-      const policyId = `policy-${chain.policy}`
-      if (!nodesMap.has(policyId)) {
-        nodesMap.set(policyId, {
-          id: policyId,
-          type: "policy",
-          label: chain.policy,
-          x: 0.25,
-          y: 0, // Will calculate later
-          sources: chain.evidence || [],
-        })
-      } else {
-        // Merge evidence if exists
-        const existing = nodesMap.get(policyId)!
-        if (chain.evidence) {
-          const existingUrls = new Set(existing.sources?.map((s) => s.url))
-          chain.evidence.forEach((ev) => {
-            if (!existingUrls.has(ev.url)) {
-              existing.sources?.push(ev)
-              existingUrls.add(ev.url)
-            }
-          })
+    setNodePositions(positions)
+  }, [data, dimensions, isMobile])
+
+  useEffect(() => {
+    const updateDimensions = () => {
+      if (svgRef.current) {
+        const container = svgRef.current.parentElement
+        if (container) {
+          const width = container.clientWidth
+          const height = Math.max(isMobile ? 800 : 600, window.innerHeight * 0.7)
+          setDimensions({ width, height })
         }
       }
-      addLink(rootId, policyId)
+    }
 
-      // 3. Sector Node
-      const sectorId = `sector-${chain.industry_or_sector}`
-      if (!nodesMap.has(sectorId)) {
-        nodesMap.set(sectorId, {
-          id: sectorId,
-          type: "sector",
-          label: chain.industry_or_sector,
-          x: 0.55,
-          y: 0, // Will calculate later
-          description: chain.impact_description,
-        })
-      } else {
-        // Append description if different
-        const existing = nodesMap.get(sectorId)!
-        if (existing.description && !existing.description.includes(chain.impact_description)) {
-          if (chain.impact_description.length > 10) {
-            existing.description += "\n\n" + chain.impact_description
-          }
-        }
-      }
-      addLink(policyId, sectorId)
+    updateDimensions()
+    window.addEventListener("resize", updateDimensions)
+    return () => window.removeEventListener("resize", updateDimensions)
+  }, [isMobile])
 
-      // 4. Company Nodes
-      chain.companies.forEach((companyName) => {
-        const companyId = `company-${companyName}`
-        if (!nodesMap.has(companyId)) {
-          nodesMap.set(companyId, {
-            id: companyId,
-            type: "company",
-            label: companyName,
-            x: 0.85,
-            y: 0, // Will calculate later
-            data: mockStockData[companyName],
-          })
-        }
-        addLink(sectorId, companyId)
-      })
-    })
-
-    // Convert to arrays
-    const nodeList = Array.from(nodesMap.values())
-    const linkList = Array.from(linksSet).map((str) => {
-      const [source, target] = str.split("|")
-      return { source, target }
-    })
-
-    // --- Layout Algorithm ---
-
-    // Group by type
-    const policies = nodeList.filter((n) => n.type === "policy")
-    const sectors = nodeList.filter((n) => n.type === "sector")
-    const companies = nodeList.filter((n) => n.type === "company")
-
-    // Sort Policies (Alphabetical or by original order if possible)
-    policies.sort((a, b) => a.label.localeCompare(b.label))
-
-    // Assign Y to Policies
-    policies.forEach((node, i) => {
-      node.y = (i + 1) / (policies.length + 1)
-    })
-
-    // Sort Sectors based on connected Policies (Barycenter method)
-    sectors.forEach((sector) => {
-      const parents = linkList
-        .filter((l) => l.target === sector.id)
-        .map((l) => nodeList.find((n) => n.id === l.source)!)
-        .filter(Boolean)
-
-      if (parents.length > 0) {
-        const avgY = parents.reduce((sum, p) => sum + p.y, 0) / parents.length
-        sector.y = avgY
-      }
-    })
-    // Sort sectors by their calculated Y to prevent crossing
-    sectors.sort((a, b) => a.y - b.y)
-    // Re-distribute evenly to avoid overlap, but keep relative order
-    sectors.forEach((node, i) => {
-      node.y = (i + 1) / (sectors.length + 1)
-    })
-
-    // Sort Companies based on connected Sectors
-    companies.forEach((company) => {
-      const parents = linkList
-        .filter((l) => l.target === company.id)
-        .map((l) => nodeList.find((n) => n.id === l.source)!)
-        .filter(Boolean)
-
-      if (parents.length > 0) {
-        const avgY = parents.reduce((sum, p) => sum + p.y, 0) / parents.length
-        company.y = avgY
-      }
-    })
-    companies.sort((a, b) => a.y - b.y)
-    companies.forEach((node, i) => {
-      node.y = (i + 1) / (companies.length + 1)
-    })
-
-    return { nodes: nodeList, links: linkList }
-  }, [data])
-
-  // Helper to get node color
-  const getNodeColor = (type: NodeType) => {
+  const getNodeColor = (type: GraphNode["type"]) => {
     switch (type) {
       case "input":
-        return "bg-blue-600 border-blue-400 text-white"
+        return "var(--color-node-input)"
       case "policy":
-        return "bg-purple-600 border-purple-400 text-white"
+        return "var(--color-node-policy)"
       case "sector":
-        return "bg-cyan-600 border-cyan-400 text-white"
-      case "company":
-        return "bg-emerald-600 border-emerald-400 text-white"
+        return "var(--color-node-sector)"
+      case "enterprise":
+        return "var(--color-node-enterprise)"
       default:
-        return "bg-gray-500"
+        return "var(--primary)"
     }
   }
 
+  const getNodeShape = (type: GraphNode["type"]) => {
+    return "roundedRect"
+  }
+
   return (
-    <div
-      className="w-full h-[800px] bg-slate-50 rounded-xl border shadow-sm overflow-hidden relative"
-      ref={containerRef}
-    >
-      {/* SVG Layer for Lines */}
-      <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
-        {links.map((link, i) => {
-          const sourceNode = nodes.find((n) => n.id === link.source)
-          const targetNode = nodes.find((n) => n.id === link.target)
-          if (!sourceNode || !targetNode) return null
-
-          // Calculate coordinates based on percentages
-          const x1 = sourceNode.x * containerSize.width
-          const y1 = sourceNode.y * containerSize.height
-          const x2 = targetNode.x * containerSize.width
-          const y2 = targetNode.y * containerSize.height
-
-          return (
-            <path
-              key={i}
-              d={`M ${x1} ${y1} C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}`}
-              fill="none"
-              stroke="#94a3b8" // Slate-400
-              strokeWidth="2"
-              strokeDasharray="5,5"
-            />
-          )
-        })}
-      </svg>
-
-      {/* Nodes Layer */}
-      {nodes.map((node) => (
-        <div
-          key={node.id}
-          className="absolute transform -translate-x-1/2 -translate-y-1/2 z-10"
-          style={{
-            left: `${node.x * 100}%`,
-            top: `${node.y * 100}%`,
-          }}
+    <div className="w-full overflow-x-auto">
+      <TooltipProvider>
+        <svg
+          ref={svgRef}
+          width={dimensions.width}
+          height={dimensions.height}
+          className="min-w-full"
+          style={{ minWidth: isMobile ? "100%" : "800px" }}
         >
-          <TooltipWrapper node={node}>
-            <motion.div
-              whileHover={{ y: -5 }}
-              transition={{ type: "spring", stiffness: 300 }}
-              className={`
-                px-4 py-3 rounded-xl shadow-lg border-2 cursor-pointer
-                flex items-center justify-center text-center
-                min-w-[140px] max-w-[200px]
-                ${getNodeColor(node.type)}
-              `}
-            >
-              <span className="text-sm font-bold line-clamp-2">{node.label}</span>
-            </motion.div>
-          </TooltipWrapper>
-        </div>
-      ))}
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="hsl(var(--border))" />
+            </marker>
+          </defs>
+
+          {/* Draw edges */}
+          <g className="edges">
+            {data.edges.map((edge) => {
+              const sourcePos = nodePositions.get(edge.source)
+              const targetPos = nodePositions.get(edge.target)
+
+              if (!sourcePos || !targetPos) return null
+
+              const dx = targetPos.x - sourcePos.x
+              const dy = targetPos.y - sourcePos.y
+              const length = Math.sqrt(dx * dx + dy * dy)
+              const nodeRadius = isMobile ? 45 : 65 // Approximate half-width of node
+
+              // Only shorten if line is long enough
+              let x2 = targetPos.x
+              let y2 = targetPos.y
+
+              if (length > nodeRadius) {
+                const ratio = (length - nodeRadius) / length
+                x2 = sourcePos.x + dx * ratio
+                y2 = sourcePos.y + dy * ratio
+              }
+
+              return (
+                <g key={edge.id}>
+                  <line
+                    x1={sourcePos.x}
+                    y1={sourcePos.y}
+                    x2={x2}
+                    y2={y2}
+                    stroke="hsl(var(--border))"
+                    strokeWidth="2"
+                    strokeDasharray="5,5" // Added dotted line style
+                    markerEnd="url(#arrow)"
+                    className="transition-all hover:stroke-primary hover:stroke-[3px]"
+                  />
+                  {edge.data.evidence && edge.data.evidence.length > 0 && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <circle
+                          cx={(sourcePos.x + targetPos.x) / 2}
+                          cy={(sourcePos.y + targetPos.y) / 2}
+                          r="8"
+                          fill="hsl(var(--muted))"
+                          stroke="hsl(var(--border))"
+                          strokeWidth="2"
+                          className="cursor-help hover:fill-primary/20"
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-sm bg-popover/90 backdrop-blur-sm border-border/50 shadow-xl">
+                        <EdgeTooltipContent edge={edge} />
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </g>
+              )
+            })}
+          </g>
+
+          {/* Draw nodes */}
+          <g className="nodes">
+            {data.nodes.map((node) => {
+              const pos = nodePositions.get(node.id)
+              if (!pos) return null
+
+              return (
+                <g key={node.id}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <g
+                        className="cursor-pointer transition-transform duration-300 ease-out hover:-translate-y-1" // Changed hover effect to slight rise instead of scale
+                        onClick={() => setSelectedNode(node.id === selectedNode ? null : node.id)}
+                      >
+                        <NodeShape
+                          type={node.type}
+                          x={pos.x}
+                          y={pos.y}
+                          color={getNodeColor(node.type)}
+                          isSelected={selectedNode === node.id}
+                          isMobile={isMobile}
+                        />
+                        <text
+                          x={pos.x}
+                          y={pos.y}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          className="fill-white text-xs md:text-sm font-medium pointer-events-none drop-shadow-md"
+                          style={{ userSelect: "none" }}
+                        >
+                          {truncateText(node.label, isMobile ? 12 : 18)}
+                        </text>
+                      </g>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-sm md:max-w-md bg-popover/90 backdrop-blur-sm border-border/50 shadow-xl">
+                      <NodeTooltipContent node={node} />
+                    </TooltipContent>
+                  </Tooltip>
+                </g>
+              )
+            })}
+          </g>
+        </svg>
+      </TooltipProvider>
     </div>
   )
 }
 
-function TooltipWrapper({ children, node }: { children: React.ReactNode; node: GraphNode }) {
+interface NodeShapeProps {
+  type: GraphNode["type"]
+  x: number
+  y: number
+  color: string
+  isSelected: boolean
+  isMobile?: boolean
+}
+
+function NodeShape({ type, x, y, color, isSelected, isMobile }: NodeShapeProps) {
+  const strokeWidth = isSelected ? 3 : 1.5
+  const stroke = isSelected ? "hsl(var(--primary))" : "white"
+  const scale = isMobile ? 0.8 : 1
+
+  let width = 140 * scale
+  let height = 70 * scale
+
+  // Slight size adjustments based on type for hierarchy, but same shape
+  if (type === "input") {
+    width = 160 * scale
+    height = 80 * scale
+  } else if (type === "enterprise") {
+    width = 130 * scale
+    height = 65 * scale
+  }
+
   return (
-    <div className="group relative">
-      {children}
-      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 hidden group-hover:block z-50 w-72">
-        <div className="bg-white/90 backdrop-blur-md p-4 rounded-xl shadow-xl border border-slate-200 text-slate-800 text-left">
-          <h4 className="font-bold text-lg mb-2 border-b pb-2">{node.label}</h4>
+    <rect
+      x={x - width / 2}
+      y={y - height / 2}
+      width={width}
+      height={height}
+      rx={12 * scale}
+      ry={12 * scale}
+      fill={color}
+      stroke={stroke}
+      strokeWidth={strokeWidth}
+      className="transition-all duration-300 ease-in-out"
+      style={{ filter: "drop-shadow(0 4px 6px rgb(0 0 0 / 0.1))" }}
+    />
+  )
+}
 
-          {node.type === "policy" && node.sources && (
-            <div className="space-y-3">
-              <p className="text-xs font-semibold text-slate-500 uppercase">Evidence</p>
-              {node.sources.map((source, idx) => (
-                <div key={idx} className="text-sm">
-                  <p className="font-medium mb-1">{source.source_title}</p>
-                  <a
-                    href={source.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline text-xs flex items-center gap-1"
-                  >
-                    <ExternalLink className="w-3 h-3" /> View Source
-                  </a>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {node.type === "sector" && node.description && (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-slate-500 uppercase">Impact Analysis</p>
-              <p className="text-sm leading-relaxed text-slate-700">{node.description}</p>
-            </div>
-          )}
-
-          {node.type === "company" && node.data && (
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 text-sm">Current Price</span>
-                <span className="font-mono font-bold text-lg">{node.data.price.toLocaleString()} KRW</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 text-sm">Change</span>
-                <Badge
-                  variant={node.data.change > 0 ? "default" : "destructive"}
-                  className={node.data.change > 0 ? "bg-red-500 hover:bg-red-600" : "bg-blue-500 hover:bg-blue-600"}
-                >
-                  {node.data.change > 0 ? (
-                    <TrendingUp className="w-3 h-3 mr-1" />
-                  ) : (
-                    <TrendingDown className="w-3 h-3 mr-1" />
-                  )}
-                  {node.data.changePercent}%
-                </Badge>
-              </div>
-            </div>
-          )}
-
-          {node.type === "input" && <p className="text-sm text-slate-600">Target of analysis</p>}
+function NodeTooltipContent({ node }: { node: GraphNode }) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="font-semibold text-base mb-1">{node.label}</div>
+        <div className="text-xs text-muted-foreground">
+          {node.type === "input" && "검색 입력"}
+          {node.type === "policy" && "관련 정책"}
+          {node.type === "sector" && "산업 분야"}
+          {node.type === "enterprise" && "관련 기업"}
         </div>
-        {/* Arrow */}
-        <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-2 border-8 border-transparent border-t-white/90"></div>
       </div>
+
+      {node.data.stockData && (
+        <div className="pt-2 border-t border-border">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-sm font-medium">현재가</span>
+            <span className="text-base font-bold">{node.data.stockData.price.toLocaleString()}원</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">{node.data.stockData.symbol}</span>
+            <div
+              className={cn(
+                "flex items-center gap-1 text-sm font-medium",
+                node.data.stockData.change > 0 ? "text-stock-up" : "text-stock-down",
+              )}
+            >
+              {node.data.stockData.change > 0 ? (
+                <TrendingUp className="w-4 h-4" />
+              ) : (
+                <TrendingDown className="w-4 h-4" />
+              )}
+              <span>
+                {node.data.stockData.change > 0 ? "+" : ""}
+                {node.data.stockData.change.toLocaleString()}({node.data.stockData.changePercent > 0 ? "+" : ""}
+                {node.data.stockData.changePercent.toFixed(2)}%)
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {node.data.description && (
+        <div className="pt-2 border-t border-border">
+          <p className="text-sm leading-relaxed whitespace-pre-line">{node.data.description}</p>
+        </div>
+      )}
+
+      {node.data.evidence && node.data.evidence.length > 0 && (
+        <div className="pt-2 border-t border-border space-y-2">
+          <div className="text-xs font-medium text-muted-foreground">
+            {node.type === "policy" ? "관련 근거" : "출처"}
+          </div>
+          {node.data.evidence.map((evidence: any, idx: number) => (
+            <a
+              key={idx}
+              href={evidence.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex flex-col gap-1 text-sm group" // Changed layout for evidence
+            >
+              <span className="font-medium text-foreground group-hover:text-primary transition-colors">
+                {evidence.source_title}
+              </span>
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <ExternalLink className="w-3 h-3" />
+                {evidence.url}
+              </span>
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   )
+}
+
+function EdgeTooltipContent({ edge }: { edge: GraphEdge }) {
+  return (
+    <div className="space-y-2">
+      <div className="text-sm font-medium">연결 관계</div>
+      {edge.data.description && <p className="text-sm leading-relaxed">{edge.data.description}</p>}
+      {edge.data.evidence && edge.data.evidence.length > 0 && (
+        <div className="pt-2 border-t border-border space-y-2">
+          <div className="text-xs font-medium text-muted-foreground">근거</div>
+          {edge.data.evidence.map((evidence: any, idx: number) => (
+            <a
+              key={idx}
+              href={evidence.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-start gap-2 text-xs text-primary hover:underline"
+            >
+              <ExternalLink className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <span className="line-clamp-2">{evidence.source_title}</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function truncateText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text
+  return text.substring(0, maxLength) + "..."
 }
