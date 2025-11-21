@@ -478,6 +478,8 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
             top: `${(nodePositions.get(hoveredNode.id)?.y || 0) - 20}px`,
             transform: "translate(-50%, -100%)",
           }}
+          onMouseEnter={() => setHoveredNode(hoveredNode)}
+          onMouseLeave={() => setHoveredNode(null)}
         >
           <NodeTooltipContent node={hoveredNode} stockPrices={stockPrices} isLoadingStocks={isLoadingStocks} />
         </div>
