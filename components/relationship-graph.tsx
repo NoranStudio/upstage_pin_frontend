@@ -325,32 +325,7 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
   }
 
   const getIntersectionPoint = (source: NodePosition, target: NodePosition, targetType: string, isMobile: boolean) => {
-    const scale = isMobile ? 0.8 : 1
-    let w = 180 * scale
-    let h = 90 * scale
-
-    if (targetType === "input") {
-      w = 200 * scale
-      h = 100 * scale
-    } else if (targetType === "enterprise") {
-      w = 170 * scale
-      h = 85 * scale
-    }
-
-    const vx = source.x - target.x
-    const vy = source.y - target.y
-
-    if (vx === 0 && vy === 0) return target
-
-    const tX = Math.abs(vx) > 0 ? w / 2 / Math.abs(vx) : Number.POSITIVE_INFINITY
-    const tY = Math.abs(vy) > 0 ? h / 2 / Math.abs(vy) : Number.POSITIVE_INFINITY
-
-    const t = Math.min(tX, tY)
-
-    return {
-      x: target.x + vx * t,
-      y: target.y + vy * t,
-    }
+    return target
   }
 
   if (nodes.length === 0) {
@@ -371,35 +346,6 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
           className="min-w-full"
           style={{ minWidth: isMobile ? "100%" : "800px" }}
         >
-          {/* Draw edges */}
-          <g className="edges">
-            {edges.map((edge) => {
-              const sourcePos = nodePositions.get(edge.source)
-              const targetPos = nodePositions.get(edge.target)
-              const targetNode = nodes.find((n) => n.id === edge.target)
-
-              if (!sourcePos || !targetPos || !targetNode) return null
-
-              const endPoint = getIntersectionPoint(sourcePos, targetPos, targetNode.type, isMobile)
-
-              return (
-                <g key={edge.id}>
-                  <line
-                    x1={sourcePos.x}
-                    y1={sourcePos.y}
-                    x2={endPoint.x}
-                    y2={endPoint.y}
-                    stroke="hsl(var(--muted-foreground))"
-                    strokeWidth="2"
-                    strokeDasharray="5,5"
-                    className="transition-all"
-                    opacity="0.6"
-                  />
-                </g>
-              )
-            })}
-          </g>
-
           {/* Draw nodes */}
           <g className="nodes">
             {nodes.map((node) => {
