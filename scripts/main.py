@@ -169,7 +169,7 @@ async def proxy_generate(request: QueryRequest):
             response = await client.post(
                 "http://127.0.0.1:8000/generate",
                 json={"query": request.query},
-                timeout=60.0  # Increased timeout for deep research
+                timeout=600.0  # Increased timeout for deep research
             )
             response.raise_for_status()
             return response.json()
