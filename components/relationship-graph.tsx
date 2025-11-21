@@ -368,24 +368,18 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
   return (
     <div className="space-y-3">
       <div>
-        <div className="font-semibold text-base mb-1">{safeRender(node.fullText || node.label || "N/A")}</div>
-        <div className="text-xs text-muted-foreground">
-          {node.type === "input" && "검색 입력"}
-          {node.type === "policy" && "관련 정책"}
-          {node.type === "sector" && "산업 분야"}
-          {node.type === "enterprise" && "관련 기업"}
-        </div>
+        <div className="font-bold text-lg mb-1">{safeRender(node.fullText || node.label || "N/A")}</div>
       </div>
 
       {node.type === "policy" && (
         <div className="pt-2 border-t border-border space-y-2">
-          <div className="flex items-start gap-2">
-            <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">관련 정책:</span>
-            <span className="text-sm font-medium">{safeRender(node.data?.description || node.label || "N/A")}</span>
+          <div className="text-sm">
+            <span className="font-medium text-muted-foreground">관련 정책: </span>
+            <span className="font-medium">{safeRender(node.data?.description || node.label || "N/A")}</span>
           </div>
-          {node.data?.evidence && Array.isArray(node.data.evidence) && node.data.evidence.length > 0 ? (
-            <>
-              <div className="text-xs font-medium text-muted-foreground mt-3">관련 근거</div>
+          {node.data?.evidence && Array.isArray(node.data.evidence) && node.data.evidence.length > 0 && (
+            <div className="mt-3">
+              <div className="text-sm font-medium text-muted-foreground mb-2">관련 근거</div>
               {node.data.evidence.map((evidence: any, idx: number) => {
                 if (!evidence || typeof evidence !== "object") {
                   return null
@@ -398,7 +392,7 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
                 const urlString = safeRender(url)
 
                 return (
-                  <div key={idx} className="flex flex-col gap-1">
+                  <div key={idx} className="flex flex-col gap-1 mb-2">
                     <span className="text-sm font-medium text-foreground">{titleString}</span>
                     {urlString && (
                       <a
@@ -414,9 +408,22 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
                   </div>
                 )
               })}
-            </>
-          ) : (
-            <div className="text-xs text-muted-foreground">관련 근거 없음</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {node.type === "sector" && (
+        <div className="pt-2 border-t border-border space-y-3">
+          <div className="text-sm">
+            <span className="font-medium text-muted-foreground">산업 분야: </span>
+            <span className="font-medium">{safeRender(node.data?.sector || node.label || "N/A")}</span>
+          </div>
+          {node.data?.impact_description && (
+            <div className="text-sm">
+              <span className="font-medium text-muted-foreground">영향 분석: </span>
+              <span className="leading-relaxed">{safeRender(node.data.impact_description)}</span>
+            </div>
           )}
         </div>
       )}
@@ -460,21 +467,6 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
               </span>
             </div>
           </div>
-        </div>
-      )}
-
-      {node.type === "sector" && (
-        <div className="pt-2 border-t border-border space-y-2">
-          <div className="flex items-start gap-2">
-            <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">산업 분야:</span>
-            <span className="text-sm font-medium">{safeRender(node.data?.sector || node.label || "N/A")}</span>
-          </div>
-          {node.data?.impact_description && (
-            <div className="flex items-start gap-2">
-              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">영향 분석:</span>
-              <p className="text-sm leading-relaxed">{safeRender(node.data.impact_description)}</p>
-            </div>
-          )}
         </div>
       )}
     </div>
