@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react"
 import type { AnalysisReport } from "@/lib/types"
+import { ExternalLink } from "lucide-react"
 import { cn, safeRender } from "@/lib/utils"
 
 interface RelationshipGraphProps {
@@ -43,7 +44,6 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [hoveredNode, setHoveredNode] = useState<ProcessedNode | null>(null)
-  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 })
   const [stockPrices, setStockPrices] = useState<Record<string, StockPriceData>>({})
   const [isLoadingStocks, setIsLoadingStocks] = useState(true)
   const stockFetchedRef = useRef(false)
@@ -332,22 +332,13 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
   }
 
   return (
-    <div className="relative w-full" style={{ height: dimensions.height }}>
+    <div className="relative w-full overflow-x-auto overflow-y-auto" style={{ height: dimensions.height }}>
       <svg
         ref={svgRef}
         width={dimensions.width}
         height={dimensions.height}
         className="min-w-full"
         style={{ minWidth: isMobile ? "100%" : "800px" }}
-        onMouseMove={(e) => {
-          if (hoveredNode && svgRef.current) {
-            const rect = svgRef.current.getBoundingClientRect()
-            setTooltipPos({
-              x: e.clientX - rect.left,
-              y: e.clientY - rect.top,
-            })
-          }
-        }}
       >
         <g className="edges">
           {nodes
@@ -451,30 +442,17 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
             return (
               <g
                 key={node.id}
-                onMouseEnter={(e) => {
-                  setHoveredNode(node)
-                  if (svgRef.current) {
-                    const rect = svgRef.current.getBoundingClientRect()
-                    setTooltipPos({
-                      x: e.clientX - rect.left,
-                      y: e.clientY - rect.top,
-                    })
-                  }
-                }}
+                className="cursor-pointer transition-transform duration-200 ease-out hover:-translate-y-1"
+                onMouseEnter={() => setHoveredNode(node)}
                 onMouseLeave={() => setHoveredNode(null)}
               >
-                <rect
-                  x={pos.x - 117}
-                  y={pos.y - 58.5}
-                  width={234}
-                  height={117}
-                  rx={12}
-                  ry={12}
-                  fill={getNodeColor(node.type)}
-                  stroke={getBorderColor(node.type)}
-                  strokeWidth={1.5}
-                  className="transition-all duration-300 ease-in-out"
-                  style={{ filter: "drop-shadow(0 4px 6px rgb(0 0 0 / 0.1))" }}
+                <NodeShape
+                  type={node.type}
+                  x={pos.x}
+                  y={pos.y}
+                  color={getNodeColor(node.type)}
+                  isSelected={selectedNode === node.id}
+                  isMobile={isMobile}
                 />
                 <text
                   x={pos.x}
@@ -493,43 +471,69 @@ export function RelationshipGraph({ data }: RelationshipGraphProps) {
       </svg>
 
       {hoveredNode && (
-        <NodeTooltipContent
-          node={hoveredNode}
-          x={tooltipPos.x}
-          y={tooltipPos.y}
-          stockPrices={stockPrices}
-          isLoadingStocks={isLoadingStocks}
-        />
+        <div
+          className="absolute z-50 pointer-events-auto"
+          style={{
+            left: `${nodePositions.get(hoveredNode.id)?.x || 0}px`,
+            top: `${(nodePositions.get(hoveredNode.id)?.y || 0) - 80}px`,
+            transform: "translate(-50%, -100%)",
+          }}
+        >
+          <NodeTooltipContent node={hoveredNode} stockPrices={stockPrices} isLoadingStocks={isLoadingStocks} />
+        </div>
       )}
     </div>
   )
 }
 
-function NodeTooltipContent({
-  node,
+function NodeShape({
+  type,
   x,
   y,
+  color,
+  isSelected,
+  isMobile,
+}: {
+  type: ProcessedNode["type"]
+  x: number
+  y: number
+  color: string
+  isSelected: boolean
+  isMobile: boolean
+}) {
+  const width = isMobile ? 150 : 200
+  const height = isMobile ? 50 : 70
+  const rx = isMobile ? 8 : 10
+  const ry = isMobile ? 8 : 10
+
+  return (
+    <rect
+      x={x - width / 2}
+      y={y - height / 2}
+      width={width}
+      height={height}
+      rx={rx}
+      ry={ry}
+      fill={color}
+      stroke={isSelected ? "rgb(239, 68, 68)" : getBorderColor(type)}
+      strokeWidth={isSelected ? 2 : 1.5}
+      className="transition-all duration-300 ease-in-out"
+      style={{ filter: "drop-shadow(0 4px 6px rgb(0 0 0 / 0.1))" }}
+    />
+  )
+}
+
+function NodeTooltipContent({
+  node,
   stockPrices,
   isLoadingStocks,
 }: {
   node: ProcessedNode
-  x: number
-  y: number
   stockPrices: Record<string, StockPriceData>
   isLoadingStocks: boolean
 }) {
-  console.log("[v0] Rendering tooltip for node:", node.id, "data:", node.data)
-
   return (
-    <div
-      className="absolute z-50 max-w-md bg-background/95 backdrop-blur-sm text-foreground rounded-lg shadow-xl border p-4"
-      style={{
-        left: `${x}px`,
-        top: `${y}px`,
-        transform: "translate(-50%, -100%)",
-        marginTop: "-12px",
-      }}
-    >
+    <div className="max-w-md bg-background/95 backdrop-blur-sm text-foreground rounded-lg shadow-xl border p-4">
       <div>
         <div className="font-bold text-lg mb-1">{safeRender(node.fullText || node.label || "N/A")}</div>
       </div>
@@ -539,48 +543,30 @@ function NodeTooltipContent({
           <div className="text-sm">
             <span className="font-medium text-muted-foreground">관련 정책: </span>
             <span className="font-medium text-foreground">
-              {(() => {
-                const policyValue = node.data?.policy || node.data?.description || node.label || "N/A"
-                console.log("[v0] Policy tooltip - rendering policy:", policyValue)
-                return safeRender(policyValue)
-              })()}
+              {safeRender(node.data?.policy || node.data?.description || node.label || "N/A")}
             </span>
           </div>
-          {(() => {
-            console.log("[v0] Policy tooltip - evidence check:", {
-              exists: !!node.data?.evidence,
-              isArray: Array.isArray(node.data?.evidence),
-              length: node.data?.evidence?.length,
-              data: node.data?.evidence,
-            })
-            return null
-          })()}
           {node.data?.evidence && Array.isArray(node.data.evidence) && node.data.evidence.length > 0 && (
             <div className="mt-3">
               <div className="text-sm font-medium text-muted-foreground mb-2">관련 근거</div>
               {node.data.evidence.map((evidence: any, idx: number) => {
-                if (!evidence || typeof evidence !== "object") {
-                  return null
-                }
+                if (!evidence || typeof evidence !== "object") return null
 
                 const title = evidence.source_title || evidence.title || "제목 없음"
-                const titleString = safeRender(title)
-
                 const url = evidence.url || evidence.source_url || ""
-                const urlString = safeRender(url)
 
                 return (
                   <div key={idx} className="flex flex-col gap-1 mb-2">
-                    <span className="text-sm font-medium text-foreground">{titleString}</span>
-                    {urlString && (
+                    <span className="text-sm font-medium text-foreground">{safeRender(title)}</span>
+                    {url && (
                       <a
-                        href={urlString}
+                        href={safeRender(url)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-xs text-primary hover:underline flex items-center gap-1"
                       >
-                        {/* <ExternalLink className="w-3 h-3" /> */}
-                        <span className="break-all">{urlString}</span>
+                        <ExternalLink className="w-3 h-3" />
+                        <span className="break-all">{safeRender(url)}</span>
                       </a>
                     )}
                   </div>
@@ -595,100 +581,69 @@ function NodeTooltipContent({
         <div className="pt-2 border-t border-border space-y-3">
           <div className="text-sm">
             <span className="font-medium text-muted-foreground">산업 분야: </span>
-            <span className="font-medium text-foreground">
-              {(() => {
-                const sectorValue = node.data?.sector || node.label || "N/A"
-                console.log("[v0] Sector tooltip - rendering sector:", sectorValue)
-                return safeRender(sectorValue)
-              })()}
-            </span>
+            <span className="font-medium text-foreground">{safeRender(node.data?.sector || node.label || "N/A")}</span>
           </div>
           <div className="text-sm">
             <span className="font-medium text-muted-foreground">영향 분석: </span>
-            <span className="leading-relaxed text-foreground">
-              {(() => {
-                const impactValue = node.data?.impactDescription || node.data?.impact_description || "정보 없음"
-                console.log("[v0] Sector tooltip - rendering impact:", impactValue)
-                return safeRender(impactValue)
-              })()}
+            <span className="text-foreground">
+              {safeRender(node.data?.impactDescription || node.data?.impact_description || "N/A")}
             </span>
           </div>
         </div>
       )}
 
       {node.type === "enterprise" && (
-        <div className="pt-2 border-t border-border space-y-4">
-          {(() => {
-            const companies = node.label.includes(",") ? node.label.split(",").map((c) => c.trim()) : [node.label]
+        <div className="pt-2 border-t border-border space-y-3">
+          <div className="text-sm font-medium text-muted-foreground mb-2">주가 정보</div>
+          {isLoadingStocks ? (
+            <div className="text-sm text-muted-foreground">로딩 중...</div>
+          ) : (
+            <>
+              {(() => {
+                const companies = node.label.includes(",") ? node.label.split(",").map((c) => c.trim()) : [node.label]
 
-            return companies.map((company, idx) => {
-              const stockData = stockPrices[company]
+                return companies.map((company, idx) => {
+                  const stockData = stockPrices[company]
 
-              return (
-                <div key={idx} className={cn("space-y-2", idx > 0 && "pt-4 border-t border-border/50")}>
-                  <div className="font-semibold text-base text-foreground">{company}</div>
+                  if (!stockData) {
+                    return (
+                      <div key={idx} className="mb-3">
+                        <div className="font-medium text-sm text-foreground mb-1">{company}</div>
+                        <div className="text-sm text-gray-600">주가 정보를 불러올 수 없습니다</div>
+                      </div>
+                    )
+                  }
 
-                  {isLoadingStocks && <div className="text-sm text-muted-foreground">주가 정보 로딩 중...</div>}
+                  if (stockData.error) {
+                    return (
+                      <div key={idx} className="mb-3">
+                        <div className="font-medium text-sm text-foreground mb-1">{company}</div>
+                        <div className="text-sm text-gray-600">{stockData.error}</div>
+                      </div>
+                    )
+                  }
 
-                  {!isLoadingStocks && !stockData && (
-                    <div className="text-sm font-medium text-gray-600">주가 정보를 불러 올 수 없습니다</div>
-                  )}
+                  const isUp = stockData.direction === "상승"
+                  const priceColor = isUp ? "text-red-500" : "text-blue-500"
 
-                  {!isLoadingStocks && stockData?.error && (
-                    <div className="text-sm font-medium text-gray-600">
-                      {stockData.error === "데이터를 찾지 못했습니다."
-                        ? "주가 정보를 불러 올 수 없습니다"
-                        : stockData.error}
-                    </div>
-                  )}
-
-                  {!isLoadingStocks && stockData && !stockData.error && (
-                    <div className="space-y-1">
+                  return (
+                    <div key={idx} className="mb-3">
+                      <div className="font-medium text-sm text-foreground mb-1">{company}</div>
                       <div className="flex items-baseline gap-2">
-                        <span className="text-sm text-muted-foreground">현재가:</span>
-                        <span
-                          className={cn(
-                            "text-2xl font-bold",
-                            stockData.direction === "상승" ? "text-red-500" : "text-blue-500",
-                          )}
-                        >
-                          {Number.parseInt(stockData.price || "0").toLocaleString()}원
-                        </span>
+                        <span className={cn("text-2xl font-bold", priceColor)}>{stockData.price || "N/A"}</span>
+                        <span className="text-xs text-muted-foreground">{stockData.direction || ""}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-muted-foreground">전일대비</span>
-                        <span
-                          className={cn(
-                            "font-semibold",
-                            stockData.direction === "상승" ? "text-red-500" : "text-blue-500",
-                          )}
-                        >
-                          {stockData.direction}
-                        </span>
-                        <span
-                          className={cn(
-                            "font-medium",
-                            stockData.direction === "상승" ? "text-red-500" : "text-blue-500",
-                          )}
-                        >
-                          {Number.parseInt(stockData.change || "0").toLocaleString()}
-                        </span>
-                        <span
-                          className={cn(
-                            "font-medium",
-                            stockData.direction === "상승" ? "text-red-500" : "text-blue-500",
-                          )}
-                        >
-                          ({stockData.direction === "상승" ? "+" : ""}
-                          {stockData.change_percent}%)
-                        </span>
-                      </div>
+                      {stockData.change && (
+                        <div className="text-sm text-muted-foreground mt-1">
+                          {stockData.change} ({stockData.change_percent || ""})
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              )
-            })
-          })()}
+                  )
+                })
+              })()}
+            </>
+          )}
         </div>
       )}
     </div>
