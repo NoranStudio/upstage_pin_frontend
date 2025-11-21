@@ -169,13 +169,11 @@ if os.path.exists(build_dir):
              if os.path.exists(index_path):
                 return FileResponse(index_path)
 
-        # 존재하지 않는 경로라면 index.html 반환 (Client-side Routing 지원)
-        # 혹은 특정 페이지(analysis.html 등)로 매핑 로직 추가 가능
         index_path = os.path.join(build_dir, "index.html")
         if os.path.exists(index_path):
             return FileResponse(index_path)
-            
-        return HTTPException(status_code=404, detail="File not found and index.html not available")
+        
+        raise HTTPException(status_code=404, detail="File not found and index.html not available")
 
 else:
     print("Warning: 'out' directory not found. Run 'npm run build' first.")
