@@ -482,27 +482,42 @@ function NodeTooltipContent({ node }: { node: ProcessedNode }) {
     if (node.type === "enterprise" && node.label) {
       const companies = node.label.includes(",") ? node.label.split(",").map((c) => c.trim()) : [node.label]
 
-      companies.forEach(async (company) => {
-        if (!stockPrices[company] && !loadingStocks[company]) {
-          setLoadingStocks((prev) => ({ ...prev, [company]: true }))
+      const fetchStockPricesSequentially = async () => {
+        for (const company of companies) {
+          if (!stockPrices[company] && !loadingStocks[company]) {
+            setLoadingStocks((prev) => ({ ...prev, [company]: true }))
 
-          try {
-            const response = await fetch("http://localhost:8001/api/stock-price", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ company }),
-            })
+            console.log(`[v0] Fetching stock price for: ${company}`)
 
-            const data = await response.json()
-            setStockPrices((prev) => ({ ...prev, [company]: data }))
-          } catch (error) {
-            console.error(`Failed to fetch stock price for ${company}:`, error)
-            setStockPrices((prev) => ({ ...prev, [company]: { error: "검색도중 에러가 났습니다." } }))
-          } finally {
-            setLoadingStocks((prev) => ({ ...prev, [company]: false }))
+            try {
+              const response = await fetch("http://localhost:8001/api/stock-price", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ company }),
+              })
+
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`)
+              }
+
+              const data = await response.json()
+              console.log(`[v0] Received stock data for ${company}:`, data)
+              setStockPrices((prev) => ({ ...prev, [company]: data }))
+            } catch (error) {
+              console.error(`[v0] Failed to fetch stock price for ${company}:`, error)
+              setStockPrices((prev) => ({ ...prev, [company]: { error: "검색도중 에러가 났습니다." } }))
+            } finally {
+              setLoadingStocks((prev) => ({ ...prev, [company]: false }))
+            }
+
+            if (companies.indexOf(company) < companies.length - 1) {
+              await new Promise((resolve) => setTimeout(resolve, 100))
+            }
           }
         }
-      })
+      }
+
+      fetchStockPricesSequentially()
     }
   }, [node.type, node.label])
 

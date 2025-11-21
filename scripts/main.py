@@ -1,17 +1,29 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 import os
 import httpx
 from pydantic import BaseModel
 import requests
 from bs4 import BeautifulSoup
 import re
+import asyncio
+import time
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8001", "http://127.0.0.1:8001"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 def get_first_spt_con_text(query: str) -> str | None:
     """네이버에서 주가 정보를 크롤링합니다."""
+    print(f"[DEBUG] Fetching stock data for: {query}")
     url = "https://search.naver.com/search.naver"
     params = {
         "where": "nexearch",
@@ -30,17 +42,21 @@ def get_first_spt_con_text(query: str) -> str | None:
     try:
         res = requests.get(url, params=params, headers=headers, timeout=10)
         res.raise_for_status()
+        print(f"[DEBUG] Request successful for: {query}")
 
         soup = BeautifulSoup(res.text, "html.parser")
 
         # .spt_con.dw 또는 .spt_con.up 중 첫 번째
         block = soup.select_one(".spt_con.dw, .spt_con.up")
         if not block:
+            print(f"[DEBUG] No stock block found for: {query}")
             return None
 
-        return " ".join(block.stripped_strings)
+        text = " ".join(block.stripped_strings)
+        print(f"[DEBUG] Stock data found: {text}")
+        return text
     except Exception as e:
-        print(f"Error fetching stock data for {query}: {e}")
+        print(f"[ERROR] Error fetching stock data for {query}: {e}")
         return None
 
 def parse_stock_data(text: str) -> dict:
@@ -52,10 +68,13 @@ def parse_stock_data(text: str) -> dict:
     if not text:
         return {"error": "데이터를 찾지 못했습니다."}
     
+    print(f"[DEBUG] Parsing stock data: {text}")
+    
     try:
         # "지수" 다음의 숫자 추출 (쉼표 포함 가능)
         price_match = re.search(r'지수\s+([\d,]+)', text)
         if not price_match:
+            print("[DEBUG] Price pattern not found")
             return {"error": "데이터를 찾지 못했습니다."}
         
         price = price_match.group(1).replace(',', '')
@@ -65,6 +84,7 @@ def parse_stock_data(text: str) -> dict:
         is_down = '하락' in text
         
         if not (is_up or is_down):
+            print("[DEBUG] Direction (상승/하락) not found")
             return {"error": "데이터를 찾지 못했습니다."}
         
         direction = "상승" if is_up else "하락"
@@ -77,16 +97,21 @@ def parse_stock_data(text: str) -> dict:
         percent_match = re.search(r'$$([+-]?[\d.]+)%$$', text)
         change_percent = percent_match.group(1) if percent_match else "0"
         
-        return {
+        result = {
             "price": price,
             "direction": direction,
             "change": change,
             "change_percent": change_percent,
             "raw_text": text
         }
+        print(f"[DEBUG] Parsed result: {result}")
+        return result
     except Exception as e:
-        print(f"Error parsing stock data: {e}")
+        print(f"[ERROR] Error parsing stock data: {e}")
         return {"error": "데이터를 찾지 못했습니다."}
+
+last_request_time = 0
+REQUEST_INTERVAL = 1.0  # 1초 간격
 
 # 1. API 라우트들을 먼저 정의합니다.
 @app.get("/api/health")
@@ -102,22 +127,38 @@ class StockPriceRequest(BaseModel):
 @app.post("/api/stock-price")
 async def get_stock_price(request: StockPriceRequest):
     """특정 기업의 주가 정보를 가져옵니다."""
+    global last_request_time
+    
+    current_time = time.time()
+    time_since_last_request = current_time - last_request_time
+    if time_since_last_request < REQUEST_INTERVAL:
+        wait_time = REQUEST_INTERVAL - time_since_last_request
+        print(f"[DEBUG] Rate limiting: waiting {wait_time:.2f}s before request")
+        await asyncio.sleep(wait_time)
+    
+    last_request_time = time.time()
+    
     try:
+        print(f"[DEBUG] Stock price request received for: {request.company}")
+        
         # 회사 이름에서 괄호 안의 내용 제거 (예: "KEPCO (한국전력)" -> "KEPCO")
         company_name = re.sub(r'\s*$$[^)]*$$', '', request.company).strip()
+        print(f"[DEBUG] Cleaned company name: {company_name}")
         
         # 주가 정보 크롤링
         stock_text = get_first_spt_con_text(company_name)
         
         if stock_text is None:
+            print(f"[DEBUG] No stock data found for: {company_name}")
             return {"error": "데이터를 찾지 못했습니다."}
         
         # 텍스트 파싱
         parsed_data = parse_stock_data(stock_text)
+        print(f"[DEBUG] Returning parsed data: {parsed_data}")
         
         return parsed_data
     except Exception as e:
-        print(f"Error in stock price endpoint: {e}")
+        print(f"[ERROR] Error in stock price endpoint: {e}")
         return {"error": "검색도중 에러가 났습니다."}
 
 @app.post("/api/generate")
